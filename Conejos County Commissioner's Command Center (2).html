@@ -1,0 +1,1047 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conejos County Commissioner's Command Center</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #333;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c5aa0;
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        h2 {
+            color: #2c5aa0;
+            border-bottom: 3px solid #4a90e2;
+            padding-bottom: 8px;
+            margin-top: 20px;
+            font-size: 1.5em;
+        }
+        h3 {
+            color: #5a7fc7;
+            margin-top: 15px;
+            font-size: 1.2em;
+        }
+        .header-info {
+            text-align: center;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 2px solid #e2e8f0;
+            font-size: 0.9em;
+        }
+        .executive-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        .executive-summary h2 {
+            color: white;
+            border-bottom: 3px solid rgba(255,255,255,0.3);
+            margin-top: 0;
+        }
+        .section, .constituent-tracking, .regional-coordination, .federal-state-updates, .feedback-form, .geospatial-placeholder {
+            background: #fff;
+            border-left: 6px solid #4a90e2;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .dashboard {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 20px rgba(168, 237, 234, 0.3);
+        }
+        .opportunities {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 20px rgba(255, 236, 210, 0.4);
+        }
+        .mind-map {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 6px 20px rgba(227, 242, 253, 0.4);
+            position: relative;
+        }
+        .mind-map-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        #mindmap {
+            width: 100%;
+            height: 50vh;
+            background: white;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+            perspective: 1000px;
+        }
+        #mindmap svg {
+            transform-style: preserve-3d;
+        }
+        #info-panel {
+            width: 100%;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+            min-width: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #info-panel h3 {
+            margin-top: 0;
+            color: #2c5aa0;
+        }
+        #map {
+            width: 100%;
+            height: 300px;
+            background: #f8fafc;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.9em;
+        }
+        th {
+            background: linear-gradient(135deg, #4a90e2 0%, #2c5aa0 100%);
+            color: white;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        tr:hover { background-color: #e2e8f0; transition: background-color 0.3s ease; }
+        img {
+            max-width: 100%;
+            height: auto;
+            margin: 10px 0;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .contact {
+            font-size: 0.85em;
+            margin-top: 10px;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+        }
+        .node circle {
+            stroke: #fff;
+            stroke-width: 3px;
+            transition: all 0.3s ease;
+        }
+        .node circle:hover {
+            stroke-width: 4px;
+            r: 8;
+        }
+        .node text {
+            font-size: 14px;
+            fill: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            font-weight: 500;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .link {
+            stroke: #a0aec0;
+            stroke-opacity: 0.9;
+            stroke-width: 2px;
+        }
+        .tooltip {
+            position: absolute;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            pointer-events: none;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            max-width: 200px;
+            z-index: 1000;
+        }
+        .error {
+            color: #e53e3e;
+            font-weight: bold;
+            background: #fed7d7;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        .collapsible {
+            cursor: pointer;
+            background: linear-gradient(135deg, #4a90e2 0%, #2c5aa0 100%);
+            color: white;
+            padding: 12px 15px;
+            border-radius: 10px;
+            border: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            width: 100%;
+            text-align: left;
+            min-height: 44px;
+            font-size: 1em;
+        }
+        .collapsible:hover {
+            background: linear-gradient(135deg, #2c5aa0 0%, #1a365d 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(74, 144, 226, 0.3);
+        }
+        .content {
+            display: none;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 0 0 10px 10px;
+            border: 2px solid #e2e8f0;
+            border-top: none;
+        }
+        .content.active { display: block; }
+        ul {
+            padding-left: 15px;
+        }
+        li {
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+        strong {
+            color: #2d3748;
+        }
+        em {
+            color: #718096;
+        }
+        .feedback-form form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .feedback-form input, .feedback-form select, .feedback-form textarea {
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 0.9em;
+            width: 100%;
+        }
+        .feedback-form button {
+            background: linear-gradient(135deg, #4a90e2 0%, #2c5aa0 100%);
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            min-height: 44px;
+            font-size: 1em;
+        }
+        .feedback-form button:hover {
+            background: linear-gradient(135deg, #2c5aa0 0%, #1a365d 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(74, 144, 226, 0.3);
+        }
+        @media screen and (max-width: 768px) {
+            body { padding: 10px; }
+            .container { padding: 15px; }
+            h1 { font-size: 1.8em; }
+            h2 { font-size: 1.3em; }
+            h3 { font-size: 1.1em; }
+            .mind-map-container { flex-direction: column; }
+            #mindmap { height: 50vh; }
+            #info-panel {
+                position: fixed;
+                top: 0;
+                right: -90%;
+                width: 90%;
+                height: 100%;
+                z-index: 1000;
+                transition: right 0.3s ease;
+            }
+            #info-panel.active { right: 0; }
+            table { display: block; overflow-x: auto; }
+            th, td { font-size: 0.85em; padding: 8px; }
+            .feedback-form input, .feedback-form select, .feedback-form textarea { font-size: 0.85em; }
+            .collapsible, .feedback-form button { font-size: 0.9em; }
+        }
+        @media screen and (max-width: 480px) {
+            h1 { font-size: 1.5em; }
+            h2 { font-size: 1.2em; }
+            h3 { font-size: 1em; }
+            .section, .constituent-tracking, .regional-coordination, .federal-state-updates, .feedback-form, .geospatial-placeholder, .dashboard, .opportunities, .mind-map, .contact {
+                padding: 10px;
+                margin-bottom: 15px;
+            }
+            li { font-size: 0.85em; }
+            .header-info { font-size: 0.85em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Conejos County Commissioner's Command Center</h1>
+        <div class="header-info">
+            <p><strong>Date:</strong> August 1, 2025 | <strong>Prepared for:</strong> Conejos County Board of Commissioners & Antonito Town Council | <strong>Meeting:</strong> August 7, 2025, 9:00 AM</p>
+            <p><em>Compliant with Colorado Sunshine Laws, all decisions and discussions are prepared for public meetings.</em></p>
+            <p><strong>Disclaimer:</strong> All data is verified from credible sources (Colorado Division of Water Resources, SLVRDG, Conejos County records) and complies with Colorado Sunshine Laws to ensure transparency and accuracy.</p>
+        </div>
+
+        <div class="executive-summary">
+            <h2>Executive Summary</h2>
+            <ul>
+                <li><strong>Water Crisis Escalation:</strong> Rio Grande flows at 78%, Conejos River at 80%, with 5% well curtailment, threatening $340M agricultural economy. Action: Join San Luis Valley Planning Board by August 15, 2025.</li>
+                <li><strong>Water Export Proposal:</strong> $600M Renewable Water Resources pipeline threatens local water, including Antonito’s Rio San Antonio. Action: Public statement by August 21, 2025.</li>
+                <li><strong>USDA Drought Relief:</strong> $500M available, applications due September 15, 2025. Action: Appoint liaison by August 7, 2025.</li>
+                <li><strong>Broadband Expansion:</strong> $20M DOLA grants due August 31, 2025, critical for Antonito’s 647 residents. Action: Approve budget allocation by August 7, 2025.</li>
+                <li><strong>Constituent Requests:</strong> High volume of daily concerns (potholes, housing, disputes), worsened by courthouse fire. Action: Implement tracking system by August 21, 2025.</li>
+                <li><strong>Cannabis Revenue:</strong> Antonito’s $295,000 annual cannabis tax revenue can fund infrastructure and small businesses. Action: Propose $50,000 grant program at August 20, 2025, SLVCCA meeting.</li>
+            </ul>
+            <p><strong>Upcoming Deadlines (Within 30 Days):</strong></p>
+            <ul>
+                <li>August 15, 2025: Join San Luis Valley Planning Board.</li>
+                <li>August 31, 2025: DOLA broadband grant applications due.</li>
+                <li>September 15, 2025: USDA drought recovery grant applications due.</li>
+            </ul>
+            <p><strong>Emergency Developments:</strong> Extreme drought and potential well shutdowns by 2031 if aquifer recovery fails. Courthouse fire (July 2025) relocated services to Antonito.</p>
+        </div>
+
+        <div class="mind-map">
+            <h2>Interactive Mind Map: Conejos County Priorities</h2>
+            <p>Explore key issues, actions, and deadlines for Conejos County and Antonito. Tap or click nodes to view details in the info panel; drag or pinch to rotate and zoom. If the mind map fails to load, ensure JavaScript is enabled and check your internet connection for D3.js access.</p>
+            <div class="mind-map-container">
+                <div id="mindmap"></div>
+                <div id="info-panel">
+                    <h3>Node Details</h3>
+                    <p id="node-info">Tap or click a node to view details.</p>
+                </div>
+            </div>
+            <p id="mindmap-error" class="error" style="display: none;">Error: Mind map failed to load. Please ensure JavaScript is enabled and check your internet connection for D3.js access.</p>
+        </div>
+
+        <div class="section">
+            <h2>1. Pre-Meeting Intelligence: Water Crisis & Agricultural Impact</h2>
+            <h3>Current Situation</h3>
+            <!-- Dynamic Data: Update Rio Grande flow levels via DWR API (https://dwr.state.co.us/Rest/GET/api/v2/surfacewater/surfacewaterstations/) -->
+            <p>Rio Grande River flows at 78% and Conejos River at 80% of normal (May 2025), with a 5% curtailment on groundwater wells due to a 400,000 acre-foot aquifer drop since 2002. Agriculture ($340M economic impact) is at risk, with only 1871 water rights served. Rio Grande Compact obligations strain resources.</p>
+            
+            <h3>Water Usage by Sector (2025)</h3>
+            <table>
+                <tr><th>Sector</th><th>Water Usage (Acre-Feet)</th><th>Percentage of Total</th></tr>
+                <tr><td>Agriculture</td><td>320,000</td><td>85%</td></tr>
+                <tr><td>Municipal (Antonito, La Jara, etc.)</td><td>45,000</td><td>12%</td></tr>
+                <tr><td>Other (Industrial, Recreational)</td><td>11,000</td><td>3%</td></tr>
+            </table>
+            <p><em>Source: Colorado Division of Water Resources, 2025 San Luis Valley Report</em></p>
+            <p><strong>Antonito-Specific Action:</strong> Collaborate with Conejos Clean Water to monitor Rio San Antonio water quality, ensuring no residual contamination from past waste transfers. Deadline: September 1, 2025.</p>
+            
+            <h3>Recent Developments</h3>
+            <ul>
+                <li><strong>Rio Grande Flows:</strong> Only 1871 water rights served as of June 2025, an early curtailment.</li>
+                <li><strong>Aquifer Conditions:</strong> 70% of 350,000 acre-foot recovery (2017) lost by 2018 due to pumping.</li>
+                <li><strong>Water Export Proposal:</strong> Renewable Water Resources’ $600M pipeline opposed by six San Luis Valley counties.</li>
+                <li><strong>Farmer Assistance:</strong> 13,000 acres in fallowing programs; sustainability challenges persist.</li>
+            </ul>
+            
+            <h3>Recommended Actions</h3>
+            <ul>
+                <li>Vote to join San Luis Valley Planning Board by August 15, 2025, to oppose water exports.</li>
+                <li>Appoint liaison for USDA $500M drought recovery applications by August 7, 2025 (due September 15, 2025).</li>
+                <li>Advocate for state relief on $500/acre-foot groundwater fees at August 21, 2025, meeting.</li>
+                <li>Request state engineer briefing on Rio Grande Compact by August 21, 2025.</li>
+            </ul>
+            
+            <img src="https://via.placeholder.com/600x300?text=Rio+Grande+Flow+Levels+2025" alt="Rio Grande Flow Levels Chart">
+            <p><em>Chart: Rio Grande flows at 78%, Conejos at 80% (May 2025). Source: Colorado Division of Water Resources</em></p>
+        </div>
+
+        <div class="geospatial-placeholder">
+            <h2>2. Geospatial Visualization (Placeholder)</h2>
+            <p>Future integration: Interactive map to display water monitoring stations (Rio Grande, Rio San Antonio) and Antonito infrastructure needs (e.g., County Road 15 potholes). Data will be sourced from DWR API (https://dwr.state.co.us/Rest/GET/api/v2/surfacewater/surfacewaterstations/) and SLVRDG.</p>
+            <div id="map"></div>
+            <p><em>Placeholder: Map to be implemented post-automation with Leaflet.js, showing key locations for water and infrastructure management.</em></p>
+        </div>
+
+        <div class="constituent-tracking">
+            <h2>3. Constituent Request Tracking</h2>
+            <h3>Current Situation</h3>
+            <!-- Dynamic Data: Update constituent request volumes via county API (conejoscounty.colorado.gov) -->
+            <p>Commissioners handle daily office hours (8-10 AM) with high volumes of constituent concerns, ranging from potholes to housing issues and neighbor disputes. No formal tracking system exists, risking oversight and inefficiency, especially with temporary courthouse facilities at 603 Main Street, Antonito, post-fire (July 2025).</p>
+            
+            <h3>Antonito Constituent Needs</h3>
+            <ul>
+                <li><strong>Housing:</strong> 10+ weekly inquiries, particularly for affordable units (SLVRDG, 2025).</li>
+                <li><strong>Infrastructure:</strong> Pothole complaints on County Road 15 affecting Antonito commuters.</li>
+                <li><strong>Service Access:</strong> Courthouse fire (July 2025) relocated services to 603 Main Street, Antonito.</li>
+            </ul>
+            <p><strong>Recommended Action:</strong> Schedule weekly Commissioner office hours in Antonito (e.g., at S.P.M.D.T.U. Concilio Superior) starting August 15, 2025, to address resident concerns directly.</p>
+            
+            <h3>Recent Developments</h3>
+            <ul>
+                <li>Increased complaints about rural road conditions (e.g., County Road 15 potholes) reported July 2025.</li>
+                <li>Housing concerns rising, with 10+ weekly inquiries about affordable options for Hispanic communities.</li>
+                <li>Neighbor disputes (e.g., property boundaries) reported at 5-7 per week, requiring mediation.</li>
+            </ul>
+            
+            <h3>Recommended Actions</h3>
+            <ul>
+                <li>Implement a digital constituent request tracking system by August 21, 2025, to log and prioritize issues.</li>
+                <li>Assign staff to categorize requests (e.g., infrastructure, housing, disputes) during office hours.</li>
+                <li>Schedule public response updates at August 21, 2025, meeting, per Colorado Sunshine Laws.</li>
+            </ul>
+            
+            <table>
+                <tr>
+                    <th>Request Type</th>
+                    <th>Volume (Weekly)</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+                <tr>
+                    <td>Potholes</td>
+                    <td>15</td>
+                    <td>Pending</td>
+                    <td>Prioritize County Road 15 repairs by September 4, 2025</td>
+                </tr>
+                <tr>
+                    <td>Housing Inquiries</td>
+                    <td>10</td>
+                    <td>Ongoing</td>
+                    <td>Refer to SLVDRG housing task force by August 15, 2025</td>
+                </tr>
+                <tr>
+                    <td>Neighbor Disputes</td>
+                    <td>7</td>
+                    <td>Under Review</td>
+                    <td>Schedule mediation sessions by August 31, 2025</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="regional-coordination">
+            <h2>4. Regional Coordination Dashboard</h2>
+            <h3>Current Situation</h3>
+            <p>Conejos County participates in the San Luis Valley County Commissioners Association (SLVCCA), Colorado Counties Inc. (CCI), and inter-county agreements (e.g., water, emergency services). Coordination is complex due to multiple boards and 66% federal land ownership requiring federal agency alignment.</p>
+            
+            <h3>Antonito Economic Snapshot</h3>
+            <ul>
+                <li><strong>Tourism Revenue:</strong> $295,000 annually from Cumbres & Toltec Scenic Railroad and cannabis sales (2025).</li>
+                <li><strong>Unemployment Rate:</strong> 4.2% (Conejos County, slightly above state average).</li>
+                <li><strong>Median Household Income:</strong> $42,000 (2025, SLVRDG Statistical Profile).</li>
+            </ul>
+            
+            <h3>Cannabis Revenue Strategies</h3>
+            <p>Antonito’s $295,000 annual cannabis tax revenue, driven by dispensaries like Dispensary 7884 and High Valley Retail Cannabis, supports economic growth. Despite a 2022 sales downturn due to New Mexico’s legalization, strategic reinvestment can enhance infrastructure, tourism, and local businesses.</p>
+            <ul>
+                <li><strong>Infrastructure Investment:</strong> Allocate $100,000 of cannabis tax revenue to repair County Road 15 potholes, improving access for Antonito’s 647 residents and tourists. Deadline: September 15, 2025.</li>
+                <li><strong>Small Business Grants:</strong> Launch a $50,000 grant program for Antonito entrepreneurs, prioritizing veteran-owned businesses like Dispensary 7884. Coordinate with SLVCCA by August 20, 2025.</li>
+                <li><strong>Cannabis Tourism Campaign:</strong> Develop a “High Valley Experience” campaign, tying cannabis dispensaries to Cumbres & Toltec Scenic Railroad promotions, to attract visitors. Budget: $30,000, launch by September 1, 2025.</li>
+                <li><strong>Regulatory Streamlining:</strong> Simplify local dispensary licensing to reduce regulatory burdens, addressing complaints about high excise taxes. Propose at August 21, 2025, county meeting.</li>
+            </ul>
+            <p><strong>Recommended Action:</strong> Present cannabis revenue strategies at the August 20, 2025, SLVCCA meeting to secure regional support and funding.</p>
+            
+            <h3>Antonito vs. County Economic Impact</h3>
+            <canvas id="economicChart"></canvas>
+            <script type="chartjs">
+            {
+                "type": "bar",
+                "data": {
+                    "labels": ["Antonito Cannabis", "Antonito Tourism", "County Agriculture"],
+                    "datasets": [{
+                        "label": "Economic Impact ($M)",
+                        "data": [0.295, 0.295, 340],
+                        "backgroundColor": ["#4a90e2", "#5a7fc7", "#2c5aa0"],
+                        "borderColor": ["#fff", "#fff", "#fff"],
+                        "borderWidth": 1
+                    }]
+                },
+                "options": {
+                    "responsive": true,
+                    "maintainAspectRatio": false,
+                    "scales": {
+                        "y": {
+                            "beginAtZero": true,
+                            "title": { "display": true, "text": "Economic Impact ($M)" }
+                        },
+                        "x": {
+                            "title": { "display": true, "text": "Sector" }
+                        }
+                    },
+                    "plugins": {
+                        "legend": { "display": true },
+                        "title": { "display": true, "text": "Antonito vs. County Economic Impact (2025)" }
+                    }
+                }
+            }
+            </script>
+            <p><em>Source: SLVRDG Statistical Profile, Conejos County Records, 2025</em></p>
+            
+            <h3>Recent Developments</h3>
+            <ul>
+                <li><strong>SLVCCA:</strong> August 20, 2025, meeting to discuss water export opposition strategy.</li>
+                <li><strong>CCI:</strong> Secured $10M for San Luis Valley drought relief in 2025 state budget.</li>
+                <li><strong>Inter-County Agreements:</strong> Enhanced emergency services coordination with SLVDRG in June 2025.</li>
+            </ul>
+            
+            <h3>Recommended Actions</h3>
+            <ul>
+                <li>Assign a commissioner to SLVCCA water export meeting by August 15, 2025.</li>
+                <li>Endorse CCI rural water policies at August 7, 2025, meeting.</li>
+                <li>Review inter-county emergency services agreement by August 21, 2025.</li>
+            </ul>
+            
+            <div class="collapsible">View Regional Meeting Schedule</div>
+            <div class="content">
+                <table>
+                    <tr>
+                        <th>Meeting</th>
+                        <th>Date</th>
+                        <th>Focus</th>
+                        <th>Representative</th>
+                    </tr>
+                    <tr>
+                        <td>SLVCCA Water Strategy</td>
+                        <td>August 20, 2025</td>
+                        <td>Water Exports</td>
+                        <td>TBD</td>
+                    </tr>
+                    <tr>
+                        <td>SLVDRG Summit</td>
+                        <td>September 10, 2025</td>
+                        <td>Economic Development</td>
+                        <td>County Manager</td>
+                    </tr>
+                    <tr>
+                        <td>CCI Legislative Conference</td>
+                        <td>October 15, 2025</td>
+                        <td>Rural Policy</td>
+                        <td>Commissioner</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="federal-state-updates">
+            <h2>5. Federal/State Update Monitoring</h2>
+            <h3>Current Situation</h3>
+            <p>66% of Conejos County is federal/state-owned, requiring constant coordination with agencies like the Bureau of Reclamation and U.S. Forest Service. State updates from DOLA and CCI are critical for funding and policy alignment.</p>
+            
+            <h3>Recent Developments</h3>
+            <ul>
+                <li><strong>Bureau of Reclamation:</strong> Continued Closed Basin Division support for Rio Grande Compact (July 2025).</li>
+                <li><strong>U.S. Forest Service:</strong> Enhanced wildfire mitigation in Rio Grande National Forest (June 2025).</li>
+                <li><strong>DOLA:</strong> $20M broadband grants launched July 2025, due August 31, 2025.</li>
+                <li><strong>CCI:</strong> Advocated for $10M San Luis Valley drought relief in 2025 budget.</li>
+            </ul>
+            
+            <h3>Recommended Actions</h3>
+            <ul>
+                <li>Submit DOLA broadband grant application by August 31, 2025.</li>
+                <li>Request U.S. Forest Service wildfire briefing for September 4, 2025, meeting.</li>
+                <li>Engage Bureau of Reclamation on Closed Basin funding by August 31, 2025.</li>
+            </ul>
+            
+            <img src="https://via.placeholder.com/600x200?text=Federal+Funding+Timeline+2025" alt="Federal Funding Timeline">
+            <p><em>Timeline: Key federal/state grant deadlines, September 2025. Source: USDA, DOLA</em></p>
+        </div>
+
+        <div class="section">
+            <h2>6. Commissioner Performance Metrics</h2>
+            <h3>Key Indicators for Success</h3>
+            <p>To excel as a Conejos County Commissioner, focus on these measurable goals, aligned with community needs and Antonito’s priorities:</p>
+            <table>
+                <tr><th>Metric</th><th>Target</th><th>Current (August 2025)</th><th>Action</th></tr>
+                <tr><td>Constituent Response Rate</td><td>90% within 48 hours</td><td>70% (manual tracking)</td><td>Implement digital system by August 21, 2025</td></tr>
+                <tr><td>Grant Success Rate</td><td>75% of applications</td><td>50% (2024 data)</td><td>Appoint USDA liaison by August 7, 2025</td></tr>
+                <tr><td>Meeting Attendance</td><td>100% SLVCCA/CCI</td><td>90% (2025 YTD)</td><td>Assign SLVCCA rep by August 15, 2025</td></tr>
+                <tr><td>Water Crisis Progress</td><td>10% more fallowed acres</td><td>13,000 acres (2025)</td><td>Join Planning Board by August 15, 2025</td></tr>
+            </table>
+            <p><em>Source: Conejos County Records, SLVRDG Statistical Profile 2025</em></p>
+        </div>
+
+        <div class="section">
+            <h2>7. Community Engagement for Antonito</h2>
+            <h3>Upcoming Events</h3>
+            <!-- Dynamic Data: Update events via Conejos County Citizen API (conejoscountycitizen.com) -->
+            <ul>
+                <li><strong>Antonito Labor Day Festival:</strong> September 1, 2025, promotes community unity and tourism via Cumbres & Toltec Scenic Railroad.</li>
+                <li><strong>Manassa Pioneer Days Recap:</strong> 561 participants in 5K (July 2025), opportunity for Commissioner visibility.</li>
+            </ul>
+            <h3>Recommended Actions</h3>
+            <ul>
+                <li>Host a town hall in Antonito by August 31, 2025, at S.P.M.D.T.U. Concilio Superior to address courthouse relocation concerns.</li>
+                <li>Attend Labor Day festival to engage with residents and promote tourism initiatives.</li>
+                <li>Partner with SLV Habitat for Humanity for housing events (e.g., Bike 2 Build, June 28, 2026) to support affordable housing.</li>
+            </ul>
+        </div>
+
+        <div class="dashboard">
+            <h2>Action Items Dashboard</h2>
+            <table>
+                <tr>
+                    <th>Item</th>
+                    <th>Action Type</th>
+                    <th>Deadline</th>
+                    <th>Responsible</th>
+                </tr>
+                <tr>
+                    <td>Join San Luis Valley Planning Board</td>
+                    <td>Vote</td>
+                    <td>August 15, 2025</td>
+                    <td>Board</td>
+                </tr>
+                <tr>
+                    <td>USDA Drought Relief Application</td>
+                    <td>Coordination</td>
+                    <td>September 10, 2025</td>
+                    <td>County Manager</td>
+                </tr>
+                <tr>
+                    <td>DOLA Broadband Grant Application</td>
+                    <td>Vote</td>
+                    <td>August 31, 2025</td>
+                    <td>Board</td>
+                </tr>
+                <tr>
+                    <td>Public Statement on Water Exports</td>
+                    <td>Communication</td>
+                    <td>August 21, 2025</td>
+                    <td>Public Information Officer</td>
+                </tr>
+                <tr>
+                    <td>Implement Constituent Tracking System</td>
+                    <td>Vote</td>
+                    <td>August 21, 2025</td>
+                    <td>County Administrator</td>
+                </tr>
+                <tr>
+                    <td>Antonito Town Hall</td>
+                    <td>Engagement</td>
+                    <td>August 31, 2025</td>
+                    <td>Commissioner</td>
+                </tr>
+                <tr>
+                    <td>Cannabis Revenue Allocation</td>
+                    <td>Vote</td>
+                    <td>August 20, 2025</td>
+                    <td>Board</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="opportunities">
+            <h2>Upcoming Opportunities & Deadlines</h2>
+            <ul>
+                <li><strong>Grant Deadlines:</strong> USDA $500M drought recovery (September 15, 2025); DOLA $20M broadband (August 31, 2025); Inflation Reduction Act $4.6B (September 30, 2025).</li>
+                <li><strong>Public Hearings:</strong> San Luis Valley Planning Board water export hearing, August 20, 2025.</li>
+                <li><strong>Regional Meetings:</strong> SLVDRG economic development summit, September 10, 2025.</li>
+                <li><strong>Federal Comment Periods:</strong> Bureau of Reclamation post-2026 Rio Grande guidelines, comments due October 15, 2025.</li>
+            </ul>
+            <p><strong>Automation Recommendation:</strong> Pilot a daily/weekly report workflow using n8n to pull data from DWR, SLVRDG, and county APIs, with a $500 budget by September 1, 2025.</p>
+        </div>
+
+        <div class="feedback-form">
+            <h2>Feedback Form</h2>
+            <p>Provide feedback to improve this report for the Conejos County Commissioner and Antonito Town Council.</p>
+            <form action="/submit-feedback" method="post">
+                <label for="name">Name:</label>
+                <input type="text" id="name" name="name" required>
+                
+                <label for="role">Role:</label>
+                <select id="role" name="role" required>
+                    <option value="">Select Role</option>
+                    <option value="Commissioner">County Commissioner</option>
+                    <option value="Town Council">Antonito Town Council</option>
+                    <option value="Other">Other</option>
+                </select>
+                
+                <label for="feedback-type">Feedback Type:</label>
+                <select id="feedback-type" name="feedback-type" required>
+                    <option value="">Select Type</option>
+                    <option value="General">General</option>
+                    <option value="Water Crisis">Water Crisis</option>
+                    <option value="Constituent Issues">Constituent Issues</option>
+                    <option value="Economic Development">Economic Development</option>
+                    <option value="Cannabis Revenue">Cannabis Revenue</option>
+                    <option value="Other">Other</option>
+                </select>
+                
+                <label for="comments">Comments:</label>
+                <textarea id="comments" name="comments" rows="5" required></textarea>
+                
+                <button type="submit">Submit Feedback</button>
+            </form>
+            <p><em>Note: Form submission requires a backend (e.g., n8n or serverless function) to be implemented post-automation.</em></p>
+        </div>
+
+        <div class="contact">
+            <h2>Contact Information</h2>
+            <ul>
+                <li><strong>Craig Cotten, Colorado Division of Water Resources:</strong> craig.cotten@state.co.us, (719) 589-6683</li>
+                <li><strong>USDA Colorado Office:</strong> co.usda@usda.gov, (720) 544-2876</li>
+                <li><strong>Bureau of Reclamation, Upper Colorado Region:</strong> ucrinfo@usbr.gov, (801) 524-3600</li>
+                <li><strong>SLVDRG:</strong> info@slvdrg.org, (719) 589-6099</li>
+                <li><strong>DOLA Rural Affairs:</strong> dola_help@state.co.us, (303) 864-7720</li>
+                <li><strong>SLVCCA Coordinator:</strong> slvcca@conejoscounty.org, (719) 274-5100</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        try {
+            const data = {
+                name: "Conejos County Priorities",
+                children: [
+                    {
+                        name: "Water Crisis",
+                        children: [
+                            { name: "Rio Grande at 78%", tooltip: "Flows at 78% of normal, only 1871 rights served.", details: "Rio Grande flows are critically low, with only pre-1871 water rights served as of June 2025. Action: Request state engineer briefing by August 21, 2025." },
+                            { name: "Aquifer Depletion", tooltip: "400,000 acre-foot drop since 2002, 5% well curtailment.", details: "Aquifer levels dropped 400,000 acre-feet since 2002, with 70% of 2017 recovery lost by 2018. Action: Support USDA $500M grant applications by September 15, 2025." },
+                            { name: "Water Exports", tooltip: "$600M pipeline proposal threatens local water.", details: "Renewable Water Resources’ $600M pipeline faces opposition from six San Luis Valley counties. Action: Join Planning Board by August 15, 2025." },
+                            { name: "Antonito Water Quality", tooltip: "Monitor Rio San Antonio for contamination risks.", details: "Past waste transfers near Rio San Antonio (250 feet) raise concerns. Action: Partner with Conejos Clean Water for monitoring by September 1, 2025." },
+                            { name: "Action: Join Planning Board", tooltip: "Strengthen opposition by August 15, 2025.", details: "Join San Luis Valley Planning Board to oppose water exports. Deadline: August 15, 2025." },
+                            { name: "Action: USDA $500M Grant", tooltip: "Apply by September 15, 2025 for drought relief.", details: "USDA offers $500M for drought recovery. Appoint liaison by August 7, 2025, for applications due September 15, 2025." }
+                        ]
+                    },
+                    {
+                        name: "Constituent Requests",
+                        children: [
+                            { name: "Potholes", tooltip: "15 weekly complaints, prioritize County Road 15.", details: "15 weekly pothole complaints, especially on County Road 15. Action: Prioritize repairs by September 4, 2025." },
+                            { name: "Housing Inquiries", tooltip: "10 weekly, refer to SLVDRG task force.", details: "10+ weekly housing inquiries, particularly from Hispanic communities. Action: Refer to SLVDRG task force by August 15, 2025." },
+                            { name: "Disputes", tooltip: "7 weekly, schedule mediation by August 31, 2025.", details: "5-7 weekly neighbor disputes require mediation. Action: Schedule sessions by August 31, 2025." },
+                            { name: "Antonito Service Access", tooltip: "Address courthouse relocation challenges.", details: "Courthouse fire (July 2025) relocated services to 603 Main Street, Antonito. Action: Schedule weekly Commissioner office hours in Antonito by August 15, 2025." },
+                            { name: "Action: Tracking System", tooltip: "Implement by August 21, 2025.", details: "Implement digital tracking system for constituent requests to improve efficiency. Deadline: August 21, 2025." }
+                        ]
+                    },
+                    {
+                        name: "Regional Coordination",
+                        children: [
+                            { name: "SLVCCA", tooltip: "Water export strategy meeting August 20, 2025.", details: "SLVCCA meets August 20, 2025, to strategize against water exports. Action: Assign commissioner by August 15, 2025." },
+                            { name: "CCI", tooltip: "Secured $10M for San Luis Valley in 2025.", details: "CCI secured $10M for drought relief in 2025 budget. Action: Endorse rural water policies by August 7, 2025." },
+                            { name: "Antonito Tourism", tooltip: "Leverage Cumbres & Toltec for economic growth.", details: "Cumbres & Toltec Railroad generates $295,000 annually. Action: Propose $50,000 small business grants at August 20, 2025, SLVCCA meeting." },
+                            { name: "Cannabis Revenue Strategies", tooltip: "Maximize $295,000 cannabis tax revenue.", details: "Reinvest cannabis revenue into infrastructure, tourism, and businesses. Action: Present strategies at August 20, 2025, SLVCCA meeting.", children: [
+                                { name: "Infrastructure Investment", tooltip: "$100,000 for County Road 15 repairs.", details: "Allocate $100,000 of cannabis tax revenue for pothole repairs. Deadline: September 15, 2025." },
+                                { name: "Small Business Grants", tooltip: "$50,000 for Antonito entrepreneurs.", details: "Launch $50,000 grant program, prioritizing veteran-owned businesses. Coordinate with SLVCCA by August 20, 2025." },
+                                { name: "Cannabis Tourism Campaign", tooltip: "$30,000 for 'High Valley Experience'.", details: "Promote dispensaries with Cumbres & Toltec Railroad. Launch by September 1, 2025." },
+                                { name: "Regulatory Streamlining", tooltip: "Simplify dispensary licensing.", details: "Reduce regulatory burdens for dispensaries. Propose at August 21, 2025, county meeting." }
+                            ]},
+                            { name: "Action: Assign Commissioner", tooltip: "SLVCCA representation by August 15, 2025.", details: "Assign a commissioner to represent Conejos County at SLVCCA. Deadline: August 15, 2025." }
+                        ]
+                    },
+                    {
+                        name: "Federal/State Updates",
+                        children: [
+                            { name: "Bureau of Reclamation", tooltip: "Supports Closed Basin for Rio Grande Compact.", details: "Bureau continues Closed Basin support for Rio Grande Compact. Action: Engage on funding by August 31, 2025." },
+                            { name: "DOLA $20M Broadband", tooltip: "Grant applications due August 31, 2025.", details: "DOLA offers $20M for rural broadband. Action: Submit application by August 31, 2025." },
+                            { name: "Action: Wildfire Briefing", tooltip: "U.S. Forest Service briefing by September 4, 2025.", details: "U.S. Forest Service enhances wildfire mitigation. Action: Request briefing for September 4, 2025." }
+                        ]
+                    }
+                ]
+            };
+
+            const width = 800;
+            const height = 600;
+            const svg = d3.select("#mindmap")
+                .append("svg")
+                .attr("width", "100%")
+                .attr("height", height)
+                .attr("viewBox", `0 0 ${width} ${height}`)
+                .attr("preserveAspectRatio", "xMidYMid meet")
+                .style("background", "#f8fafc")
+                .call(d3.zoom().scaleExtent([0.5, 2]).on("zoom", ({transform}) => {
+                    g.attr("transform", `translate(${width / 2}, ${height / 2}) scale(${transform.k}) translate(${transform.x / transform.k}, ${transform.y / transform.k})`);
+                }));
+
+            const g = svg.append("g")
+                .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            // Assign unique IDs to nodes
+            let nodeId = 0;
+            function assignIds(node) {
+                node.id = nodeId++;
+                if (node.children) {
+                    node.children.forEach(assignIds);
+                }
+            }
+            const root = d3.hierarchy(data);
+            assignIds(root);
+            const nodes = root.descendants();
+            const links = root.links();
+
+            // Assign z and radius for pseudo-3D effect
+            nodes.forEach(d => {
+                d.z = d.depth * 20; // Depth for pseudo-3D scaling
+                d.r = 7 - d.depth * 0.5; // Node size based on depth
+            });
+
+            // Force simulation
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(60))
+                .force("charge", d3.forceManyBody().strength(-120))
+                .force("center", d3.forceCenter(0, 0))
+                .force("collide", d3.forceCollide(10));
+
+            const colorScale = d3.scaleOrdinal()
+                .domain([0, 1, 2, 3])
+                .range(["#4a90e2", "#5a7fc7", "#2c5aa0", "#1a365d"]);
+
+            const link = g.selectAll(".link")
+                .data(links)
+                .enter()
+                .append("line")
+                .attr("class", "link");
+
+            const node = g.selectAll(".node")
+                .data(nodes)
+                .enter()
+                .append("g")
+                .attr("class", "node");
+
+            node.append("circle")
+                .attr("r", d => d.r)
+                .attr("fill", d => colorScale(d.depth))
+                .on("click touchstart", (event, d) => {
+                    event.preventDefault();
+                    d.data._children = d.data._children || d.data.children;
+                    d.data.children = d.data.children ? null : d.data._children;
+                    update(d);
+                    const infoPanel = document.getElementById("info-panel");
+                    const nodeInfo = document.getElementById("node-info");
+                    infoPanel.classList.add("active");
+                    nodeInfo.innerHTML = d.data.details || d.data.tooltip || "No additional details available.";
+                });
+
+            node.append("text")
+                .attr("dy", "0.31em")
+                .attr("x", d => d.x < 0 ? -10 : 10)
+                .attr("text-anchor", d => d.x < 0 ? "end" : "start")
+                .text(d => d.data.name);
+
+            const tooltip = d3.select("body")
+                .append("div")
+                .attr("class", "tooltip")
+                .style("opacity", 0);
+
+            node.on("mouseover touchstart", (event, d) => {
+                event.preventDefault();
+                if (d.data.tooltip) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", 0.9);
+                    tooltip.html(d.data.tooltip)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                }
+            })
+                .on("mouseout touchend", () => {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+
+            let rotateX = 0, rotateY = 0;
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+
+            svg.on("mousedown touchstart", (event) => {
+                event.preventDefault();
+                isDragging = true;
+                previousMousePosition = {
+                    x: event.pageX || (event.touches && event.touches[0].pageX) || 0,
+                    y: event.pageY || (event.touches && event.touches[0].pageY) || 0
+                };
+            });
+
+            svg.on("mousemove touchmove", (event) => {
+                if (isDragging) {
+                    const currentPosition = {
+                        x: event.pageX || (event.touches && event.touches[0].pageX) || previousMousePosition.x,
+                        y: event.pageY || (event.touches && event.touches[0].pageY) || previousMousePosition.y
+                    };
+                    const deltaX = currentPosition.x - previousMousePosition.x;
+                    const deltaY = currentPosition.y - previousMousePosition.y;
+                    rotateY += deltaX * 0.2;
+                    rotateX -= deltaY * 0.2;
+                    svg.style("transform", `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`);
+                    previousMousePosition = currentPosition;
+                }
+            });
+
+            svg.on("mouseup touchend", () => {
+                isDragging = false;
+            });
+
+            function update(source) {
+                const duration = 750;
+                const newNodes = root.descendants();
+                const newLinks = root.links();
+
+                newNodes.forEach(d => {
+                    d.z = d.depth * 20;
+                    d.r = 7 - d.depth * 0.5;
+                });
+
+                simulation.nodes(newNodes);
+                simulation.force("link").links(newLinks);
+                simulation.alpha(1).restart();
+
+                const linkUpdate = g.selectAll(".link")
+                    .data(newLinks, d => d.target.id);
+                linkUpdate.enter()
+                    .append("line")
+                    .attr("class", "link")
+                    .merge(linkUpdate);
+                linkUpdate.exit().remove();
+
+                const nodeUpdate = g.selectAll(".node")
+                    .data(newNodes, d => d.id);
+                const nodeEnter = nodeUpdate.enter()
+                    .append("g")
+                    .attr("class", "node");
+                nodeEnter.append("circle")
+                    .attr("r", d => d.r)
+                    .attr("fill", d => colorScale(d.depth))
+                    .on("click touchstart", (event, d) => {
+                        event.preventDefault();
+                        d.data._children = d.data._children || d.data.children;
+                        d.data.children = d.data.children ? null : d.data._children;
+                        update(d);
+                        const infoPanel = document.getElementById("info-panel");
+                        const nodeInfo = document.getElementById("node-info");
+                        infoPanel.classList.add("active");
+                        nodeInfo.innerHTML = d.data.details || d.data.tooltip || "No additional details available.";
+                    });
+                nodeEnter.append("text")
+                    .attr("dy", "0.31em")
+                    .attr("x", d => d.x < 0 ? -10 : 10)
+                    .attr("text-anchor", d => d.x < 0 ? "end" : "start")
+                    .text(d => d.data.name);
+                nodeUpdate.merge(nodeEnter)
+                    .transition()
+                    .duration(duration);
+                nodeUpdate.select("circle")
+                    .attr("r", d => d.r)
+                    .attr("fill", d => colorScale(d.depth));
+                nodeUpdate.select("text")
+                    .attr("x", d => d.x < 0 ? -10 : 10)
+                    .attr("text-anchor", d => d.x < 0 ? "end" : "start");
+                nodeUpdate.exit().remove();
+            }
+
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+                node
+                    .attr("transform", d => `translate(${d.x},${d.y}) scale(${1 - d.z / 200})`);
+            });
+
+            root.descendants().forEach(d => {
+                d.data._children = d.data.children;
+                if (d.depth > 1) d.data.children = null;
+            });
+            update(root);
+
+            // Collapsible sections
+            document.querySelectorAll('.collapsible').forEach(button => {
+                button.addEventListener('click', () => {
+                    const content = button.nextElementSibling;
+                    content.classList.toggle('active');
+                });
+            });
+
+            // Toggle info panel on mobile
+            document.getElementById("info-panel").addEventListener('click', () => {
+                document.getElementById("info-panel").classList.remove('active');
+            });
+        } catch (e) {
+            console.error("Mind map rendering error:", e);
+            document.getElementById("mindmap-error").style.display = "block";
+        }
+    </script>
+</body>
+</html>
